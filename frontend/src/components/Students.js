@@ -14,12 +14,11 @@ const YEAR_LEVELS = [
   { value: 4, label: '4th Year' },
 ];
 
-const GENDERS = [
-  { value: '',  label: 'Prefer not to say' },
+const GENDERS = [,
   { value: 'M', label: 'Male'   },
   { value: 'F', label: 'Female' },
-  { value: 'O', label: 'Other'  },
 ];
+
 
 export default function Students() {
   const [allStudents, setAllStudents] = useState([]);   // full unfiltered list

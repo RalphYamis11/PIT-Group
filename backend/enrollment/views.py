@@ -1,6 +1,9 @@
 from rest_framework import generics, status
-from rest_framework.decorators import api_view
+from rest_framework.decorators import api_view, permission_classes
+from rest_framework.permissions import IsAuthenticated, AllowAny
 from rest_framework.response import Response
+from django.contrib.auth import authenticate
+from django.contrib.auth.models import User
 from django.db.models import Q
 from .models import Student, Subject, Section, Enrollment
 from .serializers import (
@@ -9,12 +12,101 @@ from .serializers import (
 )
 
 
+# ─── Auth Views ────────────────────────────────────────────────────
+@api_view(['POST'])
+@permission_classes([AllowAny])
+def login_view(request):
+    email = request.data.get('email', '').strip().lower()
+    password = request.data.get('password', '')
+
+    if not email or not password:
+        return Response(
+            {'error': 'Email and password are required.'},
+            status=status.HTTP_400_BAD_REQUEST
+        )
+
+    # Find user by email
+    try:
+        user = User.objects.get(email__iexact=email)
+    except User.DoesNotExist:
+        return Response(
+            {'error': 'No account found with this email.'},
+            status=status.HTTP_401_UNAUTHORIZED
+        )
+
+    # Authenticate with username
+    user = authenticate(request, username=user.username, password=password)
+    if user is None:
+        return Response(
+            {'error': 'Incorrect password.'},
+            status=status.HTTP_401_UNAUTHORIZED
+        )
+
+    if not user.is_active:
+        return Response(
+            {'error': 'This account has been disabled.'},
+            status=status.HTTP_401_UNAUTHORIZED
+        )
+
+    # Return user info + simple token (session-based)
+    from django.contrib.auth import login
+    login(request, user)
+
+    return Response({
+        'message': 'Login successful.',
+        'user': {
+            'id': user.id,
+            'username': user.username,
+            'email': user.email,
+            'first_name': user.first_name,
+            'last_name': user.last_name,
+            'full_name': f"{user.first_name} {user.last_name}".strip() or user.username,
+            'is_staff': user.is_staff,
+            'is_superuser': user.is_superuser,
+            'date_joined': user.date_joined,
+            'last_login': user.last_login,
+        }
+    })
+
+
+@api_view(['POST'])
+@permission_classes([AllowAny])
+def logout_view(request):
+    from django.contrib.auth import logout
+    logout(request)
+    return Response({'message': 'Logged out successfully.'})
+
+
+@api_view(['GET'])
+@permission_classes([AllowAny])
+def profile_view(request):
+    if not request.user.is_authenticated:
+        return Response({'error': 'Not authenticated.'}, status=status.HTTP_401_UNAUTHORIZED)
+
+    user = request.user
+    return Response({
+        'id': user.id,
+        'username': user.username,
+        'email': user.email,
+        'first_name': user.first_name,
+        'last_name': user.last_name,
+        'full_name': f"{user.first_name} {user.last_name}".strip() or user.username,
+        'is_staff': user.is_staff,
+        'is_superuser': user.is_superuser,
+        'date_joined': user.date_joined,
+        'last_login': user.last_login,
+    })
+
+
 @api_view(['GET'])
 def api_root(request):
     return Response({
         'message': 'Student Enrollment & Sectioning System API',
         'version': '1.0',
         'endpoints': {
+            'login':       request.build_absolute_uri('login/'),
+            'logout':      request.build_absolute_uri('logout/'),
+            'profile':     request.build_absolute_uri('profile/'),
             'dashboard':   request.build_absolute_uri('dashboard/'),
             'students':    request.build_absolute_uri('students/'),
             'subjects':    request.build_absolute_uri('subjects/'),
@@ -173,26 +265,25 @@ class StudentEnrollmentSummaryView(generics.RetrieveAPIView):
 # ─── Dashboard ──────────────────────────────────────────────────────
 @api_view(['GET'])
 def dashboard_stats(request):
-    total_students  = Student.objects.count()
-    total_subjects  = Subject.objects.count()
-    total_sections  = Section.objects.count()
-    active_enroll   = Enrollment.objects.filter(status='enrolled').count()
-    dropped_enroll  = Enrollment.objects.filter(status='dropped').count()
-    full_sections   = sum(1 for s in Section.objects.all() if s.is_full)
-    avail_sections  = total_sections - full_sections
+    total_students = Student.objects.count()
+    total_subjects = Subject.objects.count()
+    total_sections = Section.objects.count()
+    active_enroll  = Enrollment.objects.filter(status='enrolled').count()
+    dropped_enroll = Enrollment.objects.filter(status='dropped').count()
+    full_sections  = sum(1 for s in Section.objects.all() if s.is_full)
+    avail_sections = total_sections - full_sections
 
     year_breakdown = {f'year_{i}': Student.objects.filter(year_level=i).count() for i in range(1, 5)}
-
     type_breakdown = {t: Subject.objects.filter(subject_type=t).count() for t in ['lecture', 'lab', 'pe', 'nstp']}
 
     return Response({
-        'total_students':       total_students,
-        'total_subjects':       total_subjects,
-        'total_sections':       total_sections,
-        'active_enrollments':   active_enroll,
-        'dropped_enrollments':  dropped_enroll,
-        'full_sections':        full_sections,
-        'available_sections':   avail_sections,
-        'year_breakdown':       year_breakdown,
+        'total_students':         total_students,
+        'total_subjects':         total_subjects,
+        'total_sections':         total_sections,
+        'active_enrollments':     active_enroll,
+        'dropped_enrollments':    dropped_enroll,
+        'full_sections':          full_sections,
+        'available_sections':     avail_sections,
+        'year_breakdown':         year_breakdown,
         'subject_type_breakdown': type_breakdown,
     })

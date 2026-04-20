@@ -1,107 +1,93 @@
 import axios from 'axios';
 
-// Create axios instance
 const API = axios.create({
   baseURL: 'http://localhost:8000/api',
-  timeout: 10000, // 10 seconds timeout
-  headers: {
-    'Content-Type': 'application/json',
-  },
+  headers: { 'Content-Type': 'application/json' },
+  timeout: 10000,
 });
 
-// Request interceptor
-API.interceptors.request.use(
-  (config) => {
-    // Dev logging
-    if (process.env.NODE_ENV === 'development') {
-      console.log(`[API REQUEST] ${config.method?.toUpperCase()} ${config.url}`, config);
-    }
+// ── Token helpers ─────────────────────────────────────────
+export const getAccessToken  = () => localStorage.getItem('access');
+export const getRefreshToken = () => localStorage.getItem('refresh');
+export const setTokens = (access, refresh) => {
+  localStorage.setItem('access', access);
+  localStorage.setItem('refresh', refresh);
+};
+export const clearTokens = () => {
+  localStorage.removeItem('access');
+  localStorage.removeItem('refresh');
+};
 
-    // Example: attach token if needed
-    const token = localStorage.getItem('token');
-    if (token) {
-      config.headers.Authorization = `Bearer ${token}`;
-    }
+// ── Attach access token to every request ──────────────────
+API.interceptors.request.use(config => {
+  const token = getAccessToken();
+  if (token) config.headers['Authorization'] = `JWT ${token}`;
+  return config;
+});
 
-    return config;
-  },
-  (error) => {
-    console.error('[REQUEST ERROR]', error);
-    return Promise.reject(error);
-  }
-);
-
-// Response interceptor
+// ── Auto-refresh token on 401 ─────────────────────────────
 API.interceptors.response.use(
-  (response) => {
-    // Dev logging
-    if (process.env.NODE_ENV === 'development') {
-      console.log('[API RESPONSE]', response);
+  res => res,
+  async err => {
+    const original = err.config;
+    if (err.response?.status === 401 && !original._retry) {
+      original._retry = true;
+      try {
+        const refresh = getRefreshToken();
+        const res = await axios.post('http://localhost:8000/auth/jwt/refresh/', { refresh });
+        setTokens(res.data.access, refresh);
+        original.headers['Authorization'] = `JWT ${res.data.access}`;
+        return API(original);
+      } catch {
+        clearTokens();
+        window.location.href = '/';
+      }
     }
-    return response;
-  },
-  (error) => {
-    console.error('[RESPONSE ERROR]', error);
-
-    // Handle global errors (example: unauthorized)
-    if (error.response && error.response.status === 401) {
-      console.warn('Unauthorized! Redirecting to login...');
-      // window.location.href = '/login'; // optional
-    }
-
-    return Promise.reject(error);
+    return Promise.reject(err);
   }
 );
 
-// Health check
-export const checkHealth = () =>
-  axios.get('http://localhost:8000/health/'); // outside /api
+// ── Auth ──────────────────────────────────────────────────
+export const loginUser  = (data) => axios.post('http://localhost:8000/auth/jwt/create/', data);
+export const logoutUser = ()     => { clearTokens(); };
+export const getProfile = ()     => API.get('http://localhost:8000/auth/users/me/');
+export const checkAuth  = ()     => {
+  const token = getAccessToken();
+  if (!token) return Promise.reject('No token');
+  return API.get('http://localhost:8000/auth/users/me/');
+};
 
-// Students
-export const getStudents = () => API.get('/students/');
-export const createStudent = (data) => API.post('/students/', data);
-export const updateStudent = (id, data) => API.put(`/students/${id}/`, data);
+// ── Students ──────────────────────────────────────────────
+export const getStudents    = (params = {}) => API.get('/students/',        { params });
+export const getStudent     = (id)          => API.get(`/students/${id}/`);
+export const createStudent  = (data)        => API.post('/students/',       data);
+export const updateStudent  = (id, data)    => API.put(`/students/${id}/`,  data);
+export const deleteStudent  = (id)          => API.delete(`/students/${id}/`);
 
-// PATCH (partial update)
-export const patchStudent = (id, data) => API.patch(`/students/${id}/`, data);
+// ── Subjects ──────────────────────────────────────────────
+export const getSubjects    = (params = {}) => API.get('/subjects/',        { params });
+export const createSubject  = (data)        => API.post('/subjects/',       data);
+export const updateSubject  = (id, data)    => API.put(`/subjects/${id}/`,  data);
+export const deleteSubject  = (id)          => API.delete(`/subjects/${id}/`);
 
-export const deleteStudent = (id) => API.delete(`/students/${id}/`);
+// ── Sections ──────────────────────────────────────────────
+export const getSections    = (subjectId = null, params = {}) =>
+  API.get('/sections/', { params: { ...(subjectId ? { subject: subjectId } : {}), ...params } });
+export const createSection  = (data)        => API.post('/sections/',       data);
+export const updateSection  = (id, data)    => API.put(`/sections/${id}/`,  data);
+export const deleteSection  = (id)          => API.delete(`/sections/${id}/`);
 
-// Subjects
-export const getSubjects = () => API.get('/subjects/');
-export const createSubject = (data) => API.post('/subjects/', data);
-export const updateSubject = (id, data) => API.put(`/subjects/${id}/`, data);
-export const deleteSubject = (id) => API.delete(`/subjects/${id}/`);
+// ── Enrollments ───────────────────────────────────────────
+export const getEnrollments   = (filters = {}) => API.get('/enrollments/',        { params: filters });
+export const createEnrollment = (data)          => API.post('/enrollments/',       data);
+export const updateEnrollment = (id, data)      => API.patch(`/enrollments/${id}/`, data);
+export const dropEnrollment   = (id)            => API.delete(`/enrollments/${id}/`);
 
-// Section
-export const getSections = (subjectId = null) =>
-  API.get('/sections/', {
-    params: subjectId ? { subject: subjectId } : {},
-  });
+// ── Summaries ─────────────────────────────────────────────
+export const getSummaries      = (params = {}) => API.get('/summaries/',      { params });
+export const getStudentSummary = (id)          => API.get(`/summaries/${id}/`);
 
-export const createSection = (data) => API.post('/sections/', data);
-export const updateSection = (id, data) => API.put(`/sections/${id}/`, data);
-export const deleteSection = (id) => API.delete(`/sections/${id}/`);
-
-// Enrollments
-export const getEnrollments = (filters = {}) =>
-  API.get('/enrollments/', { params: filters });
-
-export const createEnrollment = (data) =>
-  API.post('/enrollments/', data);
-
-// PUT full update
-export const updateEnrollment = (id, data) =>
-  API.put(`/enrollments/${id}/`, data);
-
-// DELETE (drop)
-export const dropEnrollment = (id) =>
-  API.delete(`/enrollments/${id}/`);
-
-// Summaries
-export const getSummaries = () => API.get('/summaries/');
-export const getStudentSummary = (id) =>
-  API.get(`/summaries/${id}/`);
-
-// Dashboard
+// ── Dashboard ─────────────────────────────────────────────
 export const getDashboardStats = () => API.get('/dashboard/');
+
+export default API;
