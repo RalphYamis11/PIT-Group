@@ -25,7 +25,7 @@ const PAGE_MAP = {
 };
 
 export default function App() {
-  const [active, setActive]           = useState('dashboard');
+  const [active, setActive] = useState('profile');
   const [heroStats, setHeroStats]     = useState(null);
   const [user, setUser]               = useState(null);
   const [authLoading, setAuthLoading] = useState(true);
@@ -45,7 +45,10 @@ export default function App() {
     }
   }, [user]);
 
-  const handleLogin = (userData) => setUser(userData);
+  const handleLogin = (userData) => {
+  setUser(userData);
+  setActive('profile');
+};
 
   const handleLogout = () => {
     logoutUser();

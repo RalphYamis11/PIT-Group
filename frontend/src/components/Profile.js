@@ -80,6 +80,9 @@ export default function Profile({ user, onLogout }) {
             <InfoRow label="First Name"  value={user.first_name} />
             <InfoRow label="Last Name"   value={user.last_name} />
             <InfoRow label="Email"       value={user.email} />
+            <InfoRow label="Address"     value={user.address} />
+            <InfoRow label="Age"         value={user.age} />
+            <InfoRow label="Birthday"    value={user.birthday} />
             <InfoRow label="Role"        value={user.is_superuser ? 'Superuser' : user.is_staff ? 'Staff / Admin' : 'Regular User'} />
           </div>
         </div>
